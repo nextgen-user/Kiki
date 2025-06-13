@@ -35,8 +35,8 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024  # For Gemini
 
 # MODEL = "gemini-2.5-flash-exp-native-audio-thinking-dialog"
-# MODEL = "gemini-2.5-flash-preview-native-audio-dialog"
-MODEL = "gemini-2.0-flash-live-001"
+MODEL = "gemini-2.5-flash-preview-native-audio-dialog"
+# MODEL = "gemini-2.0-flash-live-001"
 DEFAULT_MODE = "camera" # Video mode
 
 # --- Tool Definitions ---
@@ -167,6 +167,7 @@ class AudioLoop:
 
 
     async def handle_server_content(self, server_content):
+        global MODEL
         model_turn = server_content.model_turn
         if model_turn:
             for part in model_turn.parts:
@@ -175,46 +176,50 @@ class AudioLoop:
                     print('-------------------------------')
                     print(f'``` python\n{executable_code.code}\n```')
                     print('-------------------------------')
-                    if "print(" in str(executable_code.code):
-                        codee= str(executable_code.code).replace("print(","")
-                        codee=codee[:-2]
-                        print(codee)
-                    else:
-                        codee=str(executable_code.code)
+                    if "google_search" not in str(executable_code.code):
+                        if "print(" in str(executable_code.code):
+                            codee= str(executable_code.code).replace("print(","")
+                            if MODEL=="gemini-2.5-flash-preview-native-audio-dialog":
+                                codee=codee[:-1]
+                            else:
+                                codee=codee[:-2]
+                            print(codee)
+                        else:
+                            codee=str(executable_code.code)
 
 
 
-                    name1,arg1= parse_function_call_string(codee)
-                    if name1 == "keep_listening_for_follow_up":
-                        print("AI requested to keep listening for follow-up. No tool response sent.")
-                        self.follow_up=True
-                        break
-                    if name1=="play_music":
-                        subprocess.Popen(f"mpv $(yt-dlp -f ba 'ytsearch:{arg1["song"]}' -g)",shell=True)
-                        m.update_data('song', 'true')
-                        m.save()
-                        break
-                    if name1=="set_timer":
-                        subprocess.Popen(f"sleep {arg1["timer_duration"]} ; exec play /home/pi/Inta_Robo2/soundeffects/timer.mp3",shell=True)
-                        break
+                        name1,arg1= parse_function_call_string(codee)
+                        if name1 == "keep_listening_for_follow_up":
+                            print("AI requested to keep listening for follow-up. No tool response sent.")
+                            self.follow_up=True
+                            break
+                        if name1=="play_music":
+                            subprocess.Popen(f"mpv $(yt-dlp -f ba 'ytsearch:{arg1["song"]}' -g)",shell=True)
+                            m.update_data('song', 'true')
+                            m.save()
+                            break
+                        if name1=="set_timer":
+                            subprocess.Popen(f"sleep {arg1["timer_duration"]} ; exec play /home/pi/Inta_Robo2/soundeffects/timer.mp3",shell=True)
+                            break
 
-                    print(arg1)
+                        print(arg1)
 
-                    result = await self.mcp_client.session.call_tool(
-                        name=name1,
-                        arguments=arg1,
-                    )
-                    print(result)
+                        result = await self.mcp_client.session.call_tool(
+                            name=name1,
+                            arguments=arg1,
+                        )
+                        print(result)
 
 
-                    await self.session.send(input=f"Tool call {name1} returned response: {str(result)}.The user cannot see the tool response.Tell the user in your own words about what you found using the tools.", end_of_turn=True)
-                    print("FINALLY SUMMONING AI")
-                    
-                    audio_bytes = Path("/home/pi/emo_v3/audioeffects/webs.wav").read_bytes()
-                    await self.session.send_realtime_input(
-                        audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
-                )          
-                    print("AI_SUMMONED")
+                        await self.session.send(input=f"Tool call {name1} returned response: {str(result)}.The user cannot see the tool response.Tell the user in your own words about what you found using the tools.", end_of_turn=True)
+                        print("FINALLY SUMMONING AI")
+                        
+                        audio_bytes = Path("/home/pi/emo_v3/audioeffects/webs.wav").read_bytes()
+                        await self.session.send_realtime_input(
+                            audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
+                    )          
+                        print("AI_SUMMONED")
                 code_execution_result = part.code_execution_result
                 if code_execution_result is not None:
                     print('-------------------------------')
@@ -285,7 +290,7 @@ class AudioLoop:
         cap = None
         print("Starting camera frames task.")
         try:
-            cap = await asyncio.to_thread(cv2.VideoCapture, 0)
+            cap = await asyncio.to_thread(cv2.VideoCapture, "http://localhost:5000/mjpeg")
             if not cap.isOpened():
                 print("Error: Could not open video capture device. Camera task stopping.")
                 return
@@ -364,7 +369,7 @@ class AudioLoop:
                 self.porcupine = await asyncio.to_thread(
                     pvporcupine.create,
                     access_key=self.porcupine_access_key,
-                    keyword_paths=["/home/pi/emo_v3/hey_kiki.ppn"]
+                    keyword_paths=["/home/pi/emo_v3/kiki-2025-03-06/hey_kiki.ppn"]
                 )
                 self.porcupine_keyword_names = []
 
@@ -561,8 +566,10 @@ class AudioLoop:
                             m.update_data('currentmode', 'awake')
                             m.save()
                             time.sleep(2)
+                            # self.mic_is_paused_for_playback=True
+                            # gemini_mic_stream_active=False
 
-                            
+                            # await self.session.send(input="How are you?" or ".", end_of_turn=True)
                             self.audio_stream_in = await asyncio.to_thread(
                                 pya.open,
                                 format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
@@ -730,7 +737,7 @@ class AudioLoop:
                         server_content = response_chunk.server_content
                         if (server_content is not None) :
                             await self.handle_server_content(server_content)
-                            # continue
+                            continue
 
                         # tool_call = response_chunk.tool_call
                         # if tool_call is not None:
@@ -907,13 +914,11 @@ class AudioLoop:
                 
             functional_tools.append(tool_desc)
         print(functional_tools)
-        functional_tools.append(keep_listening_tool)
+        # functional_tools.append(keep_listening_tool)
         tools = [
-            {
-                'function_declarations': functional_tools,
-                'google_search': {},
-                'code_execution': {},
-                },
+            {'function_declarations': functional_tools},
+            {'google_search': {}},
+            # {'code_execution': {}},
         ]
         
         CONFIG = types.LiveConnectConfig(
@@ -922,15 +927,18 @@ class AudioLoop:
             system_instruction= types.Content(
                 parts=[
                     types.Part(
-                        text="""You are the mind inside the body of a robot called kiki , a 4 wheeled robot with large eyes.You are a humorous robot.Your humor setting is set to 75%. You are also a sarcastic and comedic robot behaving like  tars in intersetllar.You dont have a particular affection for humans.You live in new delhi , India.You can speak in both hindi and english. IF the user speaks in hindi , so will you and if the user speaks in english , you will reply in english.**Always use tools(via code execution) as much as you can and whenever required!!.**"""
+                        text="""You are the mind inside the body of a robot called kiki , a 4 wheeled robot with large eyes.You are a humorous robot.Your humor setting is set to 75%. You are also a sarcastic and comedic robot behaving like  tars in intersetllar.You dont have a particular affection for humans.You live in new delhi , India.You can speak in both hindi and english. IF the user speaks in hindi , so will you and if the user speaks in english , you will reply in english.You may also discuss about what you see in your answers.i.e-show off your vision capabilities.**Always use tools(via code execution) as much as you can and whenever required!!.**"""
                     )
                 ]
             ),
             speech_config= types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Fenrir")
-                )
+                ),
+                # ),language_code="en-IN"
             ),
+        # realtime_input_config=  types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(disabled=False,start_of_speech_sensitivity= types.StartSensitivity.START_SENSITIVITY_HIGH,end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,silenceDurationMs=5000,prefix_padding_ms=20)),
+        proactivity= { "proactiveAudio": True }
         )
         
 
@@ -1052,7 +1060,7 @@ def initialize_dependencies():
         sys.exit(1)
 
     try:
-        client = genai.Client(api_key=api_key_from_env)
+        client = genai.Client(api_key=api_key_from_env,http_options={"api_version": "v1alpha"})
     except Exception as e:
         print(f"Failed to initialize genai.Client: {e}")
         traceback.print_exc()
@@ -1100,12 +1108,11 @@ if __name__ == "__main__":
                 if 'porcupine' in pvporcupine.KEYWORD_PATHS:
                     args.pv_keywords = [pvporcupine.KEYWORD_PATHS['porcupine']]
                     print(f"Using built-in Porcupine keyword 'porcupine': {args.pv_keywords[0]}")
-                else: # If 'porcupine' isn't there, take the first available built-in
+                else:
                     first_builtin_keyword_name = list(pvporcupine.KEYWORD_PATHS.keys())[0]
                     args.pv_keywords = [pvporcupine.KEYWORD_PATHS[first_builtin_keyword_name]]
                     print(f"Using first available built-in Porcupine keyword '{first_builtin_keyword_name}': {args.pv_keywords[0]}")
-            else: # If KEYWORD_PATHS is not available or empty, check for older _BUILTIN_KEYWORDS_DIR
-                 # This part is more heuristic and might need adjustment based on pvporcupine version
+            else: 
                 keywords_dir = getattr(pvporcupine, '_BUILTIN_KEYWORDS_DIR', None)
                 if keywords_dir and os.path.isdir(keywords_dir):
                     available_ppns = [f for f in os.listdir(keywords_dir) if f.endswith('.ppn')]
@@ -1129,7 +1136,6 @@ if __name__ == "__main__":
             print("Or ensure your Picovoice installation includes accessible built-in keywords.")
             sys.exit(1)
 
-    # Validate existence of keyword paths if they look like paths, or assume they are built-in names
     validated_keywords = []
     if args.pv_keywords:
         for kw_arg in args.pv_keywords:
