@@ -1,0 +1,1 @@
+echo "I am a large language model trained by Google." > about_me.txt

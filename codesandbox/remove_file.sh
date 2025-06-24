@@ -1,0 +1,1 @@
+rm meaning_of_life.txt

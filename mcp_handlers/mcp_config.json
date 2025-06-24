@@ -1,0 +1,10 @@
+{
+    "mcpServers": {
+        "sysinfo": {
+            "command": "python",
+            "args": [
+                "/home/pi/emo_v3/kiki-2025-03-06/mcp_handlers/kiki_mcp_server.py"
+            ]
+        }
+    }
+}
